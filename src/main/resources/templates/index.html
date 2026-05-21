@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Дворники</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-4">
+    <h1>🚗 Дворники</h1>
+
+    <!-- Добавление -->
+    <div class="card mb-3">
+        <div class="card-header bg-primary text-white">Добавить дворника</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3"><input class="form-control" id="name" placeholder="Название"></div>
+                <div class="col-md-3"><input class="form-control" id="manufacturer" placeholder="Производитель"></div>
+                <div class="col-md-2"><input class="form-control" id="price" placeholder="Цена" type="number"></div>
+                <div class="col-md-2"><input class="form-control" id="length" placeholder="Длина см" type="number"></div>
+                <div class="col-md-2"><button class="btn btn-primary w-100" onclick="saveWiper()">💾 Добавить</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Кнопки -->
+    <button class="btn btn-success btn-sm mb-2" onclick="loadWipers()">🔄 Обновить</button>
+    <button class="btn btn-warning btn-sm mb-2" onclick="exportExcel()">📊 Excel</button>
+    <button class="btn btn-info btn-sm mb-2" onclick="sendTelegram()">📱 Telegram</button>
+    <button class="btn btn-danger btn-sm mb-2" onclick="doLogout()">🚪 Выйти</button>
+
+    <!-- Импорт -->
+    <div class="card mb-3">
+        <div class="card-header bg-info text-white">Импорт из CSV/Excel</div>
+        <div class="card-body">
+            <input type="file" id="importFile" accept=".csv,.xlsx">
+            <button class="btn btn-primary btn-sm" onclick="importFromFile()">📥 Импорт</button>
+        </div>
+    </div>
+
+    <!-- Таблица -->
+    <table class="table table-striped">
+        <thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>Аномалия</th><th>Действия</th></tr></thead>
+        <tbody id="tb"></tbody>
+    </table>
+
+<script>
+const API = '/api/wipers';
+
+async function checkAuth() {
+    const r = await fetch('/api/auth/check', {credentials:'include'});
+    if (!r.ok) { location.href = '/login'; return; }
+    const d = await r.json();
+    if (d.valid === 'false') { location.href = '/login'; }
+}
+checkAuth();
+
+async function loadWipers() {
+    const r = await fetch(API, {credentials:'include'});
+    if (r.status === 403 || r.status === 401) { location.href = '/login'; return; }
+    const d = await r.json();
+    document.getElementById('tb').innerHTML = d.map(w => `
+        <tr>
+            <td>${w.id}</td>
+            <td>${w.name}</td>
+            <td>${w.price} руб.</td>
+            <td><span class="badge bg-${w.anomalyType==='NO_ANOMALY'?'success':'danger'}">${w.anomalyType}</span></td>
+            <td>
+                ${!w.isFixed && w.anomalyType!=='NO_ANOMALY' ? `<button class="btn btn-warning btn-sm" onclick="fixWiper(${w.id})">🔧</button>` : ''}
+                <button class="btn btn-success btn-sm" onclick="checkWiper(${w.id})">🧾</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteWiper(${w.id})">🗑️</button>
+            </td>
+        </tr>`).join('');
+}
+loadWipers();
+
+async function saveWiper() {
+    const data = {
+        name: document.getElementById('name').value,
+        manufacturer: document.getElementById('manufacturer').value,
+        price: +document.getElementById('price').value,
+        wiperLength: +document.getElementById('length').value || null
+    };
+    await fetch(API, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+        credentials: 'include'
+    });
+    document.getElementById('name').value = '';
+    document.getElementById('manufacturer').value = '';
+    document.getElementById('price').value = '';
+    document.getElementById('length').value = '';
+    loadWipers();
+}
+
+async function fixWiper(id) {
+    const cost = +prompt('Стоимость ремонта:');
+    if (cost) {
+        await fetch(`${API}/${id}/fix?repairCost=${cost}`, {method:'PUT', credentials:'include'});
+        loadWipers();
+    }
+}
+
+async function checkWiper(id) {
+    const r = await fetch(`${API}/${id}/check`, {credentials:'include'});
+    const d = await r.json();
+    alert(d.path || d.error);
+}
+
+async function deleteWiper(id) {
+    if (confirm('Удалить дворник?')) {
+        await fetch(`${API}/${id}`, {method:'DELETE', credentials:'include'});
+        loadWipers();
+    }
+}
+
+async function exportExcel() {
+    const r = await fetch(`${API}/export/excel`, {credentials:'include'});
+    const d = await r.json();
+    alert(d.path || d.error);
+}
+
+async function sendTelegram() {
+    const r = await fetch('/api/telegram/report?chatId=5296403482', {method:'POST'});
+    const d = await r.json();
+    alert(d.status);
+}
+
+async function doLogout() {
+    await fetch('/api/auth/logout', {method:'POST', credentials:'include'});
+    location.href = '/login';
+}
+
+async function importFromFile() {
+    const file = document.getElementById('importFile').files[0];
+    if (!file) { alert('Выберите файл'); return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    const r = await fetch(`${API}/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+    });
+    const d = await r.json();
+    alert(d.message || d.error);
+    loadWipers();
+}
+</script>
+</body>
+</html>
